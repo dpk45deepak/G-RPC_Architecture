@@ -23,7 +23,11 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8000              # Uvicorn / REST port
+    grpc_port: int = 50051        # gRPC server port — a SEPARATE port from REST,
+                                   # because these are two independent servers
+                                   # sharing one process, not one server speaking
+                                   # two protocols on one port.
     fake_model_latency_ms: int = 150  # simulated "ML inference" time
 
     class Config:

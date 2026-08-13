@@ -29,7 +29,12 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
-import { analyzeDocument } from "../clients/fastapiClient";
+// PHASE 2 CHANGE — this is the ENTIRE diff this file needed for the
+// REST -> gRPC swap: one import, pointing at grpc/aiClient.ts instead of
+// clients/fastapiClient.ts. Both modules export a function with the same
+// input/output shape, so nothing else below changes. This is exactly the
+// payoff promised in Phase 1's comments — the seam did its job.
+import { analyzeDocumentGrpc as analyzeDocument } from "../grpc/aiClient";
 import { Job, AnalyzeInput } from "../types/job";
 
 // In-memory "database". Replaced by MongoDB in a later phase. This is
@@ -52,14 +57,15 @@ export async function submitAnalysis(input: AnalyzeInput): Promise<Job> {
   };
   jobs.set(jobId, job);
 
-  console.log(`[${requestId}] job ${jobId} created -> calling FastAPI over REST`);
+  console.log(`[${requestId}] job ${jobId} created -> calling FastAPI over gRPC`);
 
   const start = Date.now();
   try {
-    // This is the ONLY line in this file that knows anything about HTTP,
-    // JSON, or FastAPI's URL — everything about "how do I actually reach
-    // FastAPI" is hidden inside fastapiClient. That's the whole point of
-    // giving the transport client its own module.
+    // This is the ONLY line in this file that knows anything about the
+    // AI backend's transport — everything about "how do I actually reach
+    // FastAPI" is hidden inside aiClient.ts. That's the whole point of
+    // giving the transport client its own module: this function body is
+    // byte-for-byte identical to Phase 1's, only the import above changed.
     const result = await analyzeDocument({
       text: input.text,
       analysisType: input.analysisType,
@@ -67,7 +73,7 @@ export async function submitAnalysis(input: AnalyzeInput): Promise<Job> {
     });
 
     const duration = Date.now() - start;
-    console.log(`[${requestId}] FastAPI responded in ${duration}ms`);
+    console.log(`[${requestId}] FastAPI (gRPC) responded in ${duration}ms`);
 
     job.status = "completed";
     job.result = result;

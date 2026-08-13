@@ -1,0 +1,77 @@
+// proto/ai_service.proto
+//
+// WHAT: The gRPC contract between Express (the client) and FastAPI (the
+//       server). This single file is compiled into a typed client stub
+//       for TypeScript and a typed server base class for Python — both
+//       languages generate code from the SAME source, so it's physically
+//       impossible for the two sides to disagree about field names or
+//       types the way a hand-maintained REST contract can drift.
+//
+// WHY IT EXISTS: in Phase 1, the "contract" between Express and FastAPI
+//       was implicit — an axios URL, and a JSON shape both sides happened
+//       to agree on by convention (and Express even had to manually
+//       rename analysisType -> analysis_type to match it). Nothing
+//       enforced that agreement; a typo in either service would only
+//       surface at runtime. This .proto file makes the contract explicit,
+//       versioned, and machine-checked at build time instead.
+//
+// WHO USES THIS: `protoc` (the protobuf compiler) reads this file and
+//       generates:
+//         - Python: ai_service_pb2.py (message classes) and
+//           ai_service_pb2_grpc.py (client stub + server base class)
+//         - TypeScript: loaded dynamically at runtime by @grpc/proto-loader
+//           (no separate generated-file step needed on the Node side —
+//           see express-service/src/grpc/aiClient.ts for why that's a
+//           valid alternative to static codegen)
+
+syntax = "proto3";
+
+// Protobuf "package" — namespaces the generated types so they don't
+// collide with other .proto files in a larger system. Unrelated to any
+// npm/pip package.
+package aipipelinelab;
+
+// A gRPC "service" declares a set of RPC methods, the same way an
+// Express Router declares a set of HTTP routes — except each method here
+// is strongly typed on both ends, not just "some URL that returns JSON".
+service AIService {
+  // Unary RPC: client sends exactly ONE AnalyzeRequest, server sends back
+  // exactly ONE AnalyzeResponse. This is the direct gRPC replacement for
+  // Phase 1's `POST /analyze` REST call — same job, different wire
+  // protocol. (Server streaming, client streaming, and bidirectional
+  // streaming RPCs are added to this service in a later phase.)
+  rpc Analyze(AnalyzeRequest) returns (AnalyzeResponse);
+}
+
+message AnalyzeRequest {
+  // Every field has a NAME and a FIELD NUMBER (the `= 1`, `= 2`, ...).
+  // The field number, not the name, is what actually goes on the wire —
+  // protobuf's binary encoding is a sequence of (field number, value)
+  // pairs. This is why you never renumber or reuse an existing field
+  // number once a contract has shipped: doing so silently reinterprets
+  // old binary data under a new field's type. Renaming a field, by
+  // contrast, is harmless — the field number is unchanged.
+  string text = 1;
+  string analysis_type = 2;
+  // request_id travels here, as a normal message field, in THIS
+  // request. In the next phase we'll move identity/tracing data like
+  // this into gRPC *metadata* instead (the gRPC analogue of an HTTP
+  // header) so that "business data" and "out-of-band data" are cleanly
+  // separated — but putting it in the message first, where you can see
+  // it plainly, makes that later distinction easier to appreciate.
+  string request_id = 3;
+}
+
+message AnalyzeResponse {
+  string summary = 1;
+  string sentiment = 2;
+  // `repeated` means "a list of". There is no separate "array type" in
+  // protobuf the way TypeScript has `string[]` — you mark an existing
+  // type as repeated instead.
+  repeated string keywords = 3;
+  // Protobuf has no single generic "number" type like JSON/JS does.
+  // int32 here is a deliberate, explicit choice — contrast with
+  // Pydantic's `int` (Python) or TypeScript's `number`, both of which
+  // hide the underlying width/representation from you.
+  int32 processing_time_ms = 4;
+}
